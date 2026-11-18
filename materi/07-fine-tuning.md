@@ -50,6 +50,8 @@ Setelah SFT berhasil, coba:
 1. **Mulai kecil** (0.5B – 1.5B). Iterasi dalam menit, bukan jam.
 2. **Fine-tuning mengajarkan perilaku, bukan fakta.** Untuk menambah pengetahuan
    (misalnya dokumen perusahaan), **RAG** biasanya lebih baik dan lebih murah.
+   Untuk data yang sering berubah, **jangan** fine-tuning ulang setiap ada data baru —
+   lihat ⭐ [09 — Data yang Cepat Berubah](09-data-cepat-berubah.md).
 3. **Chat template harus benar** — template yang salah sering membuat model rusak.
 4. **Selalu evaluasi sebelum dan sesudah** — waspadai *catastrophic forgetting*.
 5. **Kerjakan satu proyek nyata dari awal sampai akhir**: data → training → evaluasi → deploy.

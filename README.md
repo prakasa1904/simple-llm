@@ -99,6 +99,7 @@ Baca materi berurutan, lalu jalankan contoh yang menyertainya.
 | 06 | [Bentuk data training](materi/06-data-training.md) — pretraining, SFT, preference | lihat `contoh/data_sft_contoh.jsonl` |
 | 07 | [Fine-tuning](materi/07-fine-tuning.md) — LoRA/QLoRA dari model terbuka | `python contoh/05_fine_tune_lora.py` * |
 | 08 | [Membangun GPT mini](materi/08-membangun-mini-gpt.md) — membedah `mini_gpt/` | `python mini_gpt/train.py` |
+| 09 | ⭐ [Data yang cepat berubah](materi/09-data-cepat-berubah.md) — kapan fine-tuning, RAG, atau tool calling | — |
 
 \* Contoh 05 butuh paket tambahan dan mengunduh model ±1 GB dari Hugging Face:
 
@@ -184,7 +185,7 @@ simple-llm/
 ├── README.md
 ├── requirements.txt              # PyTorch
 ├── requirements-finetune.txt     # paket tambahan untuk contoh 05
-├── materi/                       # 01–08: rangkuman materi
+├── materi/                       # 01–09: rangkuman materi
 ├── contoh/
 │   ├── 01_vektor_buah.py         # cosine similarity
 │   ├── 02_attention_manual.py    # attention dihitung manual

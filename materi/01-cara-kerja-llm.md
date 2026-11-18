@@ -144,6 +144,198 @@ Kekurangannya terlihat di hasilnya: model cepat lupa konteks dan sering membuat 
 > lebih mahal (±5 kali lebih panjang, attention ±28 kali lebih berat, konteks cepat habis).
 > LLM sungguhan memakai **potongan kata** sebagai jalan tengah.
 
+## Bagaimana potongan kata ditentukan? (BPE)
+
+Tidak ada ahli bahasa yang menentukan bahwa "makanan" dipotong menjadi `["makan", "an"]`, dan
+tidak ada aturan imbuhan di dalam tokenizer. Pemotongan ditentukan oleh **statistik**: potongan
+huruf mana yang **paling sering muncul berdampingan** di data. Algoritma yang paling umum
+disebut **BPE (Byte Pair Encoding)**.
+
+> Hasil di bagian ini nyata, dari BPE sederhana yang dilatih pada teks latih GPT mini.
+> Jalankan `python contoh/08_bpe_sederhana.py` untuk melihatnya sendiri.
+
+### Cara kerja BPE
+
+Idenya mirip orang yang malas menulis: *pasangan huruf yang paling sering muncul, gabungkan jadi satu token.*
+
+```
+1. Mulai dari huruf satu per satu.
+2. Hitung semua pasangan yang berdampingan di seluruh teks.
+3. Gabungkan pasangan yang PALING SERING menjadi token baru.
+4. Ulangi langkah 2–3 sebanyak N kali.
+```
+
+Tidak ada kamus, tidak ada aturan tata bahasa. Hanya **menghitung dan menggabung**.
+
+10 penggabungan (merge) pertama pada teks latih GPT mini:
+
+```
+ 1. a + n   → an    (254 kali)
+ 2. a + r   → ar    (95 kali)
+ 3. l + a   → la    (78 kali)
+ 4. n + g   → ng    (77 kali)
+ 5. e + r   → er    (77 kali)
+ 6. an + g  → ang   (70 kali)   ← token hasil gabungan bisa digabung lagi
+ 7. m + e   → me    (64 kali)
+ 8. a + k   → ak    (56 kali)
+ 9. a + t   → at    (50 kali)
+10. d + i   → di    (50 kali)
+```
+
+`an` menang karena pasangan ini muncul di mana-mana dalam bahasa Indonesia: makan**an**,
+k**an**cil, **an**jing, dan seterusnya. Algoritma tidak tahu bahwa "-an" adalah akhiran; ia hanya
+tahu bahwa `a` dan `n` **sering bersebelahan**.
+
+### Melihat potongan terbentuk sedikit demi sedikit
+
+| Setelah | makanan | dimakan | memakan | kancilnya | menghitung |
+|---|---|---|---|---|---|
+| 10 merge | m · ak · an · an | di · m · ak · an | me · m · ak · an | k · an · c · i · l · n · y · a | me · ng · h · i · t · u · ng |
+| 60 merge | m · ak · an · an | di · m · ak · an | mem · ak · an | kancil · n · ya | me · ng · h · i · tu · ng |
+| 120 merge | m · akan · an | di · m · akan | mem · akan | kancil · nya | meng · h · **itu** · ng |
+| 300 merge | **makan · an** ✅ | **di · makan** ✅ | mem · akan ❌ | **kancil · nya** ✅ | menghitung |
+
+- `makanan → makan · an`, `dimakan → di · makan`, dan `kancilnya → kancil · nya` **kebetulan cocok**
+  dengan imbuhan yang benar.
+- `memakan → mem · akan` ❌ — secara bahasa seharusnya "me + makan". Tetapi `akan` sudah terbentuk
+  lebih dulu (dari "makan" dan "memakan"), jadi statistik memotongnya di tempat yang "salah".
+- `menghitung` sempat dipotong `meng · h · itu · ng`, karena kata "itu" sangat sering muncul.
+  Jelas bukan pemotongan yang masuk akal secara bahasa.
+- Setelah 300 merge, `menghitung` menjadi **satu token utuh** karena cukup sering muncul di data.
+
+### Kenapa hasilnya sering cocok dengan imbuhan?
+
+Karena **imbuhan memang sering muncul**. "-an", "di-", "me-", "ber-", dan "-nya" ditempelkan ke
+ratusan kata berbeda, jadi statistik menemukannya. Itu **efek samping**, bukan aturan.
+
+### Apakah potongan yang "salah" merusak model?
+
+Hampir tidak:
+
+1. **Model tidak butuh potongan yang benar secara bahasa, hanya yang konsisten.** "memakan" akan
+   **selalu** dipotong `mem · akan`, dan embedding ([02](02-vektor-dan-embedding.md)) serta
+   attention ([03](03-attention.md)) belajar sendiri artinya dari konteks.
+2. **Kata yang sering muncul akhirnya menjadi satu token utuh**, seperti `menghitung`.
+3. **Tidak ada kata yang tidak dikenal**: paling buruk, sebuah kata dipecah sampai ke huruf.
+
+### Berapa banyak penggabungan?
+
+Jumlah merge **dipilih oleh pembuat model** — sebuah *hyperparameter*, sama seperti `n_layer`
+atau `n_embd`:
+
+```
+ukuran kosakata = jumlah huruf/byte awal + jumlah merge
+```
+
+| Merge sedikit | Merge banyak |
+|---|---|
+| Kosakata kecil, model kecil | Kosakata besar, tabel embedding besar |
+| Teks menjadi banyak token | Teks menjadi sedikit token |
+| Mendekati tokenizer per huruf | Mendekati tokenizer per kata |
+
+Jadi jumlah merge adalah tombol pengatur "jalan tengah" di atas. LLM besar biasanya berhenti di
+sekitar **100.000 – 250.000 token**.
+
+### Hal penting lainnya
+
+1. **Tokenizer dilatih sekali, sebelum modelnya.** Daftar merge disimpan, lalu dipakai untuk
+   memotong semua teks dengan **urutan merge yang sama**. Setelah model dilatih, tokenizer tidak
+   boleh diubah, karena setiap nomor token sudah terikat ke baris tabel embedding.
+2. **Data latih tokenizer menentukan siapa yang "diuntungkan".** Jika tokenizer dilatih sebagian
+   besar dengan teks bahasa Inggris, merge-nya berisi potongan bahasa Inggris, dan kata bahasa
+   Indonesia dipecah lebih kecil (lebih banyak token, lebih mahal di API).
+3. **Ada beberapa variasi algoritma, tetapi idenya sama: statistik.**
+
+| Algoritma | Ide | Dipakai di (contoh) |
+|---|---|---|
+| **BPE** | Gabungkan pasangan paling sering | Keluarga GPT, Llama, Qwen |
+| **Byte-level BPE** | BPE yang mulai dari byte, bukan huruf, sehingga emoji dan aksara apa pun bisa diproses | GPT dan banyak LLM modern |
+| **WordPiece** | Mirip BPE, tetapi memilih gabungan yang paling menaikkan peluang data | BERT |
+| **Unigram (SentencePiece)** | Mulai dari kosakata besar, lalu buang potongan yang paling tidak berguna | T5, beberapa model multibahasa |
+
+> **Ringkasan:** pemotongan token **tidak memakai aturan bahasa**. BPE mulai dari huruf, lalu
+> berulang kali **menggabungkan pasangan yang paling sering muncul** di data. "makanan" menjadi
+> `makan · an` karena "makan" dan "an" sering muncul, bukan karena algoritma tahu "-an" adalah
+> akhiran. Kadang hasilnya "salah" secara bahasa (`mem · akan`), tetapi tidak masalah selama
+> pemotongannya **konsisten**: model belajar arti setiap potongan dari konteks.
+
+## Kapan tokenizer dilatih? Sekali, sebelum pretraining
+
+"Menghitung dan menggabung" **tidak** membuat model terus berubah. Proses itu hanya terjadi
+**sekali, sebelum pretraining**, lalu hasilnya **dibekukan selamanya**.
+
+```
+0. Kumpulkan data teks
+        │
+1. LATIH TOKENIZER (BPE)            ← "menghitung dan menggabung" terjadi DI SINI
+   - di CPU, hitungan menit/jam
+   - tanpa GPU, tanpa loss, tanpa backpropagation
+   - hasil: daftar merge + kosakata → disimpan ke file
+   - SETELAH INI DIBEKUKAN 🔒
+        │
+2. PRETRAINING                      ← bobot model dilatih (GPU, berminggu-minggu)
+   - tokenizer hanya DIPAKAI untuk mengubah teks → ID
+   - yang berubah: tabel embedding, attention, feed-forward
+        │
+3. FINE-TUNING (SFT, DPO, LoRA)     ← tokenizer yang SAMA
+        │
+4. DIPAKAI (inference)              ← tokenizer yang SAMA
+```
+
+Ada **dua jenis "pelatihan" yang sangat berbeda**:
+
+| | Melatih tokenizer (BPE) | Melatih model (pretraining) |
+|---|---|---|
+| Kapan | Sekali, **sebelum** pretraining | Setelah tokenizer jadi |
+| Caranya | Menghitung pasangan yang sering muncul | Tebak → loss → backprop → perbaiki bobot ([05](05-training.md)) |
+| Punya bobot/loss? | ❌ Tidak | ✅ Ya |
+| Butuh GPU? | ❌ Tidak | ✅ Ya, banyak |
+| Hasil | Daftar merge + kosakata | Bobot model (miliaran angka) |
+| Berubah lagi setelahnya? | ❌ Dibekukan | ✅ Bisa di-fine-tune |
+
+### Kenapa tokenizer harus dibekukan?
+
+**Nomor token = nomor baris di tabel embedding** ([02](02-vektor-dan-embedding.md)). Selama
+pretraining, baris 26 belajar menjadi "makna `makan`". Kalau tokenizer dilatih ulang dan nomor 26
+tiba-tiba berarti `ber`, model membaca baris yang salah untuk setiap token — **model rusak total**,
+seperti mengganti nomor semua loker tanpa memindahkan isinya.
+
+Karena itu, model di Hugging Face selalu dibagikan **bersama file tokenizernya**
+(`tokenizer.json`, atau `vocab` + `merges`). `AutoTokenizer.from_pretrained(...)` mengunduh
+tokenizer **persis sama** dengan yang dipakai saat pretraining. Ini juga alasan hasil fine-tuning
+disebut **model turunan**: ia **harus** memakai tokenizer base model-nya ([07](07-fine-tuning.md)).
+
+### Hal yang sama di GPT mini
+
+1. **Latih tokenizer** — di [`mini_gpt/train.py`](../mini_gpt/train.py), `CharTokenizer.dari_teks(teks)`
+   mengumpulkan semua karakter unik. Instan, tanpa GPU.
+2. **Dibekukan dan disimpan** — daftar karakternya disimpan **ke dalam checkpoint**
+   (`"karakter": tok.karakter`).
+3. **Pretraining** — loop training mengubah bobot; daftar karakternya tidak pernah berubah.
+4. **Dipakai** — [`mini_gpt/generate.py`](../mini_gpt/generate.py) **tidak membuat tokenizer baru**,
+   tetapi memuatnya dari checkpoint (`CharTokenizer(ckpt["karakter"])`) agar nomornya cocok
+   dengan tabel embedding.
+
+Konsekuensinya: melatih dengan `--data teks_saya.txt` menghasilkan kosakata berbeda, jadi itu
+**model baru dari nol** dengan tokenizer baru. Checkpoint lama dan baru tidak bisa saling ditukar.
+
+### Pengecualian: menambah token setelah pretraining
+
+Kadang tim tetap **menambah** token baru, misalnya:
+- **token khusus** seperti `<|im_start|>` untuk chat template saat fine-tuning;
+- **token bahasa Indonesia** agar teks Indonesia lebih hemat token.
+
+Caranya **menambah, bukan mengganti**: token lama tetap dengan nomor yang sama, token baru
+mendapat nomor di ujung. Tabel embedding diperbesar dengan baris baru yang **masih acak**, jadi
+model perlu dilatih lagi agar baris-baris itu bermakna. Untuk beberapa token khusus, fine-tuning
+sudah cukup; untuk banyak token bahasa baru, biasanya perlu *continued pretraining* dengan banyak
+data — dan itu mahal.
+
+> **Ringkasan:** BPE adalah **langkah terpisah yang terjadi sekali, sebelum pretraining**, tanpa
+> bobot, loss, atau backpropagation. Hasilnya **dibekukan**, lalu dipakai tanpa perubahan saat
+> pretraining, fine-tuning, dan saat model dipakai, karena setiap nomor token sudah terikat ke
+> satu baris tabel embedding. Yang berubah saat training adalah **bobot model**, bukan tokenizernya.
+
 ## Model menulis jawaban satu token setiap kali
 
 ```
@@ -166,6 +358,8 @@ Itulah sebabnya chatbot menampilkan jawaban seperti sedang diketik.
 | **Fine-tuning (SFT)** | Dilatih dengan contoh tanya-jawab → bisa mengikuti instruksi | Murah (1 GPU, beberapa jam) | **Anda** |
 | **Preference (DPO/RLHF/GRPO)** | Diajari mana jawaban yang lebih baik | Sedang | **Anda** |
 
+- **Sebelum tahap pertama** ada langkah persiapan: **melatih tokenizer**, yang dilakukan sekali
+  lalu dibekukan (lihat [Kapan tokenizer dilatih?](#kapan-tokenizer-dilatih-sekali-sebelum-pretraining)).
 - **Base model** hanya melanjutkan teks. Ditanya "Apa ibu kota Indonesia?", ia bisa
   melanjutkan dengan soal-soal lain, seperti daftar soal ujian di internet.
 - **Instruct/chat model** sudah melewati SFT dan preference, sehingga menjawab.

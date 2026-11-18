@@ -1,0 +1,12 @@
+# Hasil training (buat ulang dengan: python mini_gpt/train.py)
+*.pt
+hasil-lora/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistem
+.DS_Store

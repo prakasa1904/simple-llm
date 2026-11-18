@@ -97,7 +97,7 @@ Baca materi berurutan, lalu jalankan contoh yang menyertainya.
 | 04 | [Sampling](materi/04-sampling.md) — temperature, top-k, top-p | `python contoh/03_sampling_temperature.py` |
 | 05 | [Training](materi/05-training.md) — loss, gradient descent, backpropagation | `python contoh/04_training_mini.py` |
 | 06 | [Bentuk data training](materi/06-data-training.md) — pretraining, SFT, preference, data apa yang terbaik untuk pretraining | lihat `contoh/data_sft_contoh.jsonl` |
-| 07 | [Fine-tuning](materi/07-fine-tuning.md) — LoRA/QLoRA dari model terbuka | `python contoh/05_fine_tune_lora.py` * |
+| 07 | [Fine-tuning](materi/07-fine-tuning.md) — LoRA/QLoRA dari model terbuka, menambah pengetahuan (continued pretraining vs SFT vs RAG) | `python contoh/05_fine_tune_lora.py` * |
 | 08 | [Membangun GPT mini](materi/08-membangun-mini-gpt.md) — membedah `mini_gpt/` | `python mini_gpt/train.py` |
 | 09 | ⭐ [Data yang cepat berubah](materi/09-data-cepat-berubah.md) — kapan fine-tuning, RAG, atau tool calling | — |
 
@@ -121,18 +121,22 @@ tapi lambat.
 
 | Opsi | Default | Arti |
 |---|---|---|
-| `--data` | `mini_gpt/data/teks.txt` | File teks untuk dilatih (UTF-8) |
-| `--keluaran` | `mini_gpt/checkpoint.pt` | Lokasi menyimpan model |
+| `--data` | `mini_gpt/data/teks.txt` | Satu atau beberapa file teks (UTF-8); tiap file dibagi 90% latih / 10% uji |
+| `--lanjut-dari` | — | Lanjutkan dari checkpoint (continued pretraining). Tokenizer dan ukuran model diambil dari checkpoint |
+| `--pantau-data` | — | File teks lain yang loss-nya ikut dipantau (misalnya data lama, untuk melihat apakah model lupa) |
+| `--keluaran` | `mini_gpt/checkpoint.pt`<br>(lanjutan: `mini_gpt/checkpoint_lanjut.pt`) | Lokasi menyimpan model |
 | `--langkah` | `2000` | Jumlah step training |
 | `--ukuran-batch` | `32` | Potongan teks per step |
-| `--panjang-konteks` | `64` | Maksimal karakter yang dilihat sekaligus |
-| `--n-layer` | `2` | Jumlah layer Transformer |
-| `--n-head` | `4` | Jumlah attention head |
-| `--n-embd` | `64` | Panjang vektor embedding (harus habis dibagi `--n-head`) |
-| `--dropout` | `0.2` | Persentase neuron yang dimatikan saat training |
-| `--learning-rate` | `0.001` | Ukuran langkah |
+| `--panjang-konteks` | `64` | Maksimal karakter yang dilihat sekaligus * |
+| `--n-layer` | `2` | Jumlah layer Transformer * |
+| `--n-head` | `4` | Jumlah attention head * |
+| `--n-embd` | `64` | Panjang vektor embedding (harus habis dibagi `--n-head`) * |
+| `--dropout` | `0.2` | Persentase neuron yang dimatikan saat training * |
+| `--learning-rate` | `0.001`<br>(lanjutan: `0.0003`) | Ukuran langkah |
 | `--cek-setiap` | `100` | Cetak loss setiap N step |
 | `--device` | `auto` | `auto`, `cpu`, `cuda`, atau `mps` |
+
+\* Diabaikan saat memakai `--lanjut-dari`, karena ukuran model mengikuti checkpoint.
 
 ### `mini_gpt/generate.py`
 
@@ -180,6 +184,26 @@ Model hanya mengenal karakter yang ada di data latih; karakter lain di prompt di
 
 ---
 
+## Melanjutkan training dengan data baru (continued pretraining)
+
+Alih-alih mulai dari nol, model yang sudah dilatih bisa **dilanjutkan** dengan teks baru:
+
+```bash
+python mini_gpt/train.py --lanjut-dari mini_gpt/checkpoint.pt \
+    --data mini_gpt/data/teks_tambahan.txt mini_gpt/data/teks.txt \
+    --pantau-data mini_gpt/data/teks.txt
+```
+
+- `teks_tambahan.txt` berisi topik baru (tata surya); `teks.txt` ikut dimasukkan sebagai
+  *replay* agar model tidak melupakan data lama.
+- Kolom **pantau** menunjukkan loss pada data lama. Coba hapus `mini_gpt/data/teks.txt` dari
+  `--data` dan lihat kolom ini naik: model mulai lupa.
+- Tokenizer tidak bisa berubah, jadi karakter baru di data tambahan dilewati (skrip memberi peringatan).
+
+Penjelasan lengkap dan hasil eksperimennya ada di [materi 07](materi/07-fine-tuning.md#eksperimen-continued-pretraining-di-gpt-mini).
+
+---
+
 ## Struktur repo
 
 ```
@@ -203,7 +227,9 @@ simple-llm/
     ├── model.py                  # arsitektur GPT
     ├── train.py                  # training + early stopping
     ├── generate.py               # menulis teks
-    └── data/teks.txt             # teks latih bahasa Indonesia
+    └── data/
+        ├── teks.txt              # teks latih bahasa Indonesia
+        └── teks_tambahan.txt     # topik baru (tata surya) untuk continued pretraining
 ```
 
 ---

@@ -96,6 +96,7 @@ Ini persis yang terjadi pada LLM besar, hanya skalanya jauh lebih kecil.
 | Tanpa dropout | `train.py --dropout 0` | loss uji memburuk lebih cepat |
 | Data Anda sendiri | `train.py --data teks_saya.txt` | model meniru gaya teks Anda |
 | Konteks lebih pendek | `train.py --panjang-konteks 16` | kalimat lebih cepat "lupa" awalnya |
+| Continued pretraining | `train.py --lanjut-dari mini_gpt/checkpoint.pt --data mini_gpt/data/teks_tambahan.txt --pantau-data mini_gpt/data/teks.txt` | belajar topik baru, tapi lupa yang lama (lihat [07](07-fine-tuning.md)) |
 
 **Tips data sendiri:** semakin banyak teks semakin bagus. Coba gabungkan beberapa artikel
 atau buku domain publik (ratusan ribu karakter), lalu naikkan ukuran model dan jumlah step.

@@ -45,6 +45,10 @@ Mana yang lebih "mahal"? Jawabannya tergantung **apa yang diukur**, dan hasilnya
 
 ### Kenapa per kata membuat model lebih mahal
 
+"Mahal" di sini berarti hal-hal yang konkret: **memori** (RAM/GPU), **ukuran file**,
+**waktu hitung**, dan **jumlah data** yang dibutuhkan. Semuanya berawal dari satu hal:
+**kosakata yang besar**.
+
 **1. Kosakatanya meledak.** Huruf jumlahnya tetap, tetapi kata baru selalu muncul
 (nama, istilah, salah ketik):
 
@@ -54,30 +58,59 @@ Mana yang lebih "mahal"? Jawabannya tergantung **apa yang diukur**, dan hasilnya
 | Per kata, hanya dari teks latih kecil ini | **426** |
 | Per kata, untuk bahasa nyata | **±100.000 atau lebih** |
 
-**2. Setiap token butuh dua baris di model.** Satu baris di **tabel embedding** (input,
-lihat [02](02-vektor-dan-embedding.md)) dan satu baris di **kepala output**, karena di
-akhir model harus memberi skor untuk **setiap** token di kosakata:
+**2. Setiap token di kosakata butuh tempat di dua bagian model.**
 
 ```
-parameter embedding + kepala = 2 × ukuran_kosakata × n_embd
+AWAL : ID token ──► TABEL EMBEDDING ──► vektor 64 angka
+                    (1 baris per token)        │
+                                               ▼  attention, feed-forward (materi 03)
+AKHIR: vektor 64 angka ──► KEPALA OUTPUT ──► 1 skor untuk SETIAP token di kosakata
+                           (1 baris per token)       → pilih token berikutnya (materi 04)
 ```
 
-Dengan `n_embd = 64` seperti GPT mini:
+- **Tabel embedding** (awal): setiap token punya **1 baris berisi 64 angka** — lihat
+  [02](02-vektor-dan-embedding.md).
+- **Kepala output** (akhir): untuk memilih token berikutnya, model harus memberi **skor kepada
+  setiap token yang mungkin**. Kalau kosakata berisi 49 huruf, ada 49 skor. Kalau berisi
+  100.000 kata, ada **100.000 skor — setiap kali menebak satu token**.
 
-| Tokenizer | Embedding + kepala |
-|---|---|
-| Per huruf (49) | **6.272** parameter |
-| Per kata, teks ini (426) | **54.528** parameter |
-| Per kata, bahasa nyata (100.000) | **12.800.000** parameter |
+Analogi: pelayan restoran yang harus menilai **semua menu** sebelum merekomendasikan satu.
+Dengan 49 menu itu cepat; dengan 100.000 menu, setiap rekomendasi jadi sangat lambat.
 
-Seluruh GPT mini hanya **±110 ribu parameter**. Dengan kosakata 100.000 kata, dua tabel ini
-saja sudah **100 kali lebih besar dari seluruh modelnya**. Setiap kali menebak token
-berikutnya, model juga harus menghitung skor untuk 100.000 kemungkinan, bukan 49.
+Jumlah angka (parameter) di dua bagian ini:
 
-**3. Data untuk tiap kata terlalu sedikit.** Dari 426 kata unik, **259 hanya muncul sekali**.
-Barisnya hampir tidak bisa belajar apa pun. Sebaliknya, huruf `a` muncul ratusan kali.
+```
+parameter embedding + kepala ≈ 2 × ukuran_kosakata × n_embd
+```
 
-**4. Kata berimbuhan jadi token yang tidak saling kenal.** Masalah besar untuk bahasa Indonesia:
+**3. Mahal dalam memori, ukuran file, dan waktu.** Hasil pengukuran dua bagian ini
+saja (embedding + kepala) dengan `n_embd = 64` seperti GPT mini, di CPU laptop:
+
+| | Per huruf (49) | Per kata, teks ini (426) | Per kata, bahasa nyata (100.000) |
+|---|---|---|---|
+| **Jumlah parameter** | 6.272 | 54.528 | **12.800.000** |
+| **Ukuran file** (4 byte per angka) | 0,03 MB | 0,22 MB | **51 MB** |
+| **Perkalian di kepala output, per token** | 3.136 | 27.264 | **6.400.000** |
+| **Memori untuk skor**, 1 batch (32 × 64 token) | 0,4 MB | 3,5 MB | **819 MB** |
+| **Waktu 1 step training** (dua bagian ini saja) | ±0,5 ms | ±1 ms | **±150 ms** |
+
+Cara membacanya:
+
+- **Ukuran file dan memori model**: seluruh GPT mini hanya ±110 ribu parameter. Dengan
+  kosakata 100.000 kata, dua tabel ini saja sudah **100 kali lebih besar dari seluruh modelnya**.
+- **Memori saat training**: skor untuk satu batch saja butuh **819 MB**. GPU kecil bisa
+  kehabisan memori hanya karena kosakatanya besar.
+- **Waktu**: satu step **ratusan kali lebih lambat** (dari kurang dari 1 ms menjadi ±150 ms).
+  Training GPT mini yang sekarang ±12 detik bisa menjadi puluhan menit.
+
+(Waktu pengukuran berbeda-beda di setiap komputer, tetapi perbandingannya kurang lebih sama.
+Jalankan `python contoh/07_biaya_tokenizer.py` untuk mengukurnya di komputer Anda.)
+
+**4. Mahal dalam data: tiap kata terlalu jarang muncul.** Dari 426 kata unik, **259 hanya muncul
+sekali**. Barisnya hampir tidak bisa belajar apa pun. Agar setiap kata terlatih dengan baik,
+dibutuhkan **jauh lebih banyak data**. Sebaliknya, huruf `a` muncul ratusan kali.
+
+**5. Kata berimbuhan jadi token yang tidak saling kenal.** Masalah besar untuk bahasa Indonesia:
 
 ```
 makan  → makan, makanan, memakan
@@ -88,7 +121,7 @@ lari   → lari, berlari, larinya, larimu
 Dengan token per kata, `makan`, `makanan`, dan `memakan` adalah **baris yang terpisah sama
 sekali**; model harus belajar dari nol bahwa ketiganya berhubungan.
 
-**5. Kata baru tidak bisa diproses.** `dimakan`, `berlarian`, dan `Kancilnya` tidak ada di
+**6. Kata baru tidak bisa diproses.** `dimakan`, `berlarian`, dan `Kancilnya` tidak ada di
 data latih, sehingga **tidak punya nomor sama sekali** (*out-of-vocabulary*). Tokenizer per
 huruf tidak punya masalah ini: kata baru tetap bisa dieja dengan huruf yang sudah dikenal.
 
@@ -139,8 +172,9 @@ Untuk **belajar** dengan **data sangat kecil**, per huruf paling cocok: tabelnya
 dikenal", dan kodenya sangat sederhana ([`mini_gpt/tokenizer.py`](../mini_gpt/tokenizer.py)).
 Kekurangannya terlihat di hasilnya: model cepat lupa konteks dan sering membuat kata yang tidak ada.
 
-> **Ringkasan:** token **per kata** membuat **model** lebih mahal (kosakata besar, tabel besar,
-> banyak kata jarang, kata baru tidak dikenal). Token **per huruf** membuat **pemrosesan teks**
+> **Ringkasan:** token **per kata** membuat **model** lebih mahal: kosakata besar → tabel embedding
+> dan kepala output besar → butuh lebih banyak memori, file lebih besar, setiap step lebih lambat,
+> dan lebih banyak data; ditambah kata jarang dan kata baru yang tidak dikenal. Token **per huruf** membuat **pemrosesan teks**
 > lebih mahal (±5 kali lebih panjang, attention ±28 kali lebih berat, konteks cepat habis).
 > LLM sungguhan memakai **potongan kata** sebagai jalan tengah.
 

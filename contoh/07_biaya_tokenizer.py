@@ -8,10 +8,35 @@ Menghitung angka-angka di materi 01 dari teks latih GPT mini. Tanpa download.
 
 import argparse
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 AKAR = Path(__file__).resolve().parent.parent
+UKURAN_BATCH = 32
+
+
+def ukur_waktu(ukuran_kosakata, n_embd, konteks, ulang=3):
+    """Ukur waktu 1 step training (maju + backprop) untuk embedding + kepala output saja."""
+    torch.manual_seed(0)
+    embed = nn.Embedding(ukuran_kosakata, n_embd)   # tabel embedding (awal)
+    kepala = nn.Linear(n_embd, ukuran_kosakata)     # kepala output (akhir)
+    x = torch.randint(ukuran_kosakata, (UKURAN_BATCH, konteks))
+    y = torch.randint(ukuran_kosakata, (UKURAN_BATCH, konteks))
+
+    def satu_step():
+        skor = kepala(embed(x))                      # 1 skor untuk SETIAP token kosakata
+        F.cross_entropy(skor.view(-1, ukuran_kosakata), y.view(-1)).backward()
+
+    satu_step()  # pemanasan
+    mulai = time.perf_counter()
+    for _ in range(ulang):
+        satu_step()
+    return (time.perf_counter() - mulai) / ulang * 1000
 
 
 def main():
@@ -34,13 +59,22 @@ def main():
     print(f"   kata yang hanya muncul 1 kali: {jarang} dari {len(hitung_kata)} "
           f"-> barisnya hampir tidak bisa belajar")
 
-    # ---- 2. Ukuran model ----
+    # ---- 2. Biaya tabel embedding + kepala output ----
     d = args.n_embd
-    print(f"\n2. UKURAN MODEL: embedding + kepala = 2 x kosakata x n_embd ({d})")
+    print(f"\n2. BIAYA TABEL EMBEDDING + KEPALA OUTPUT (n_embd = {d}, batch {UKURAN_BATCH} x "
+          f"{args.konteks} token, diukur di CPU)")
+    print(f"   {'':24} {'parameter':>11} {'file':>9} {'perkalian/token':>16} "
+          f"{'memori skor':>12} {'waktu/step':>11}")
     for nama, v in [("per huruf", len(set(huruf))), ("per kata, teks ini", len(hitung_kata)),
                     ("per kata, bahasa nyata", 100_000)]:
-        print(f"   {nama:24} kosakata {v:>7,} -> {2 * v * d:>12,} parameter")
-    print("   (seluruh GPT mini bawaan hanya ±110 ribu parameter)")
+        parameter = 2 * v * d
+        file_mb = parameter * 4 / 1e6                       # 4 byte per angka (float32)
+        skor_mb = UKURAN_BATCH * args.konteks * v * 4 / 1e6  # 1 skor per token kosakata, per posisi
+        waktu = ukur_waktu(v, d, args.konteks)
+        print(f"   {nama:24} {parameter:>11,} {file_mb:>7.2f}MB {d * v:>16,} "
+              f"{skor_mb:>10.1f}MB {waktu:>9.1f}ms")
+    print("   (seluruh GPT mini bawaan hanya ±110 ribu parameter;"
+          " waktu berbeda di tiap komputer)")
 
     # ---- 3. Panjang teks ----
     rasio = len(huruf) / len(kata)

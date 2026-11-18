@@ -91,7 +91,7 @@ Baca materi berurutan, lalu jalankan contoh yang menyertainya.
 
 | # | Materi | Coba |
 |---|---|---|
-| 01 | [Cara kerja LLM](materi/01-cara-kerja-llm.md) — menebak token berikutnya, 3 tahap membuat LLM | — |
+| 01 | [Cara kerja LLM](materi/01-cara-kerja-llm.md) — menebak token berikutnya, tokenizer per huruf vs per kata vs sub-word, 3 tahap membuat LLM | `python contoh/07_biaya_tokenizer.py` |
 | 02 | [Vektor dan embedding](materi/02-vektor-dan-embedding.md) — makna sebagai angka, hubungan tokenizer → tabel embedding | `python contoh/01_vektor_buah.py`<br>`python contoh/06_tokenizer_embedding.py` † |
 | 03 | [Attention](materi/03-attention.md) — kata saling "melihat" (Q, K, V) | `python contoh/02_attention_manual.py` |
 | 04 | [Sampling](materi/04-sampling.md) — temperature, top-k, top-p | `python contoh/03_sampling_temperature.py` |
@@ -195,6 +195,7 @@ simple-llm/
 │   ├── 04_training_mini.py       # model belajar "Jakarta"
 │   ├── 05_fine_tune_lora.py      # fine-tuning LoRA (TRL + PEFT)
 │   ├── 06_tokenizer_embedding.py # tokenizer -> tabel embedding GPT mini
+│   ├── 07_biaya_tokenizer.py     # per huruf vs per kata: ukuran & biaya
 │   └── data_sft_contoh.jsonl     # contoh data SFT
 └── mini_gpt/
     ├── tokenizer.py              # tokenizer per huruf
